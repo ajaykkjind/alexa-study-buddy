@@ -4,8 +4,9 @@ import os
 
 app = Flask(__name__)
 
-# 🔑 Set your OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Make sure to set this environment variable before running the app
+# 🔑 API key from environment
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 
 @app.route("/", methods=["GET"])
 def home():
@@ -16,45 +17,93 @@ def home():
 def alexa():
     req = request.json
 
-    # 🔍 Extract question safely
     try:
-        intent = req['request']['intent']
-        question = intent['slots']['question']['value']
+        req_type = req['request']['type']
     except:
-        question = "Please repeat the question"
+        req_type = None
 
-    # 🧠 ChatGPT response
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{
-                "role": "user",
-                "content": f"""
+    # 🟢 1. Launch request (when user says "open Study Buddy")
+    if req_type == "LaunchRequest":
+        return jsonify({
+            "version": "1.0",
+            "response": {
+                "outputSpeech": {
+                    "type": "PlainText",
+                    "text": "Namaste! Main Study Buddy hoon. Aap kya padhna chahte ho?"
+                },
+                "shouldEndSession": False
+            }
+        })
+
+    # 🔵 2. Intent request (user asks question)
+    if req_type == "IntentRequest":
+        try:
+            intent = req['request']['intent']
+            question = intent['slots']['question']['value']
+        except:
+            question = None
+
+        if not question:
+            return jsonify({
+                "version": "1.0",
+                "response": {
+                    "outputSpeech": {
+                        "type": "PlainText",
+                        "text": "Please apna question fir se bolo."
+                    },
+                    "shouldEndSession": False
+                }
+            })
+
+        try:
+            # 🧠 ChatGPT call
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "user",
+                    "content": f"""
 You are a class 8 tutor.
-Explain in Hinglish.
-Keep answer under 3-4 lines.
-Use simple words for class 8 students.
-Keep answers short, simple, and correct.
-Give one examples.
+
+Rules:
+- Explain in Hinglish (mix Hindi + English)
+- Keep answer short (3-4 lines max)
+- Use simple words
+- Give 1 example
+- Be factually correct (NCERT level)
+- If unsure, say: "Mujhe isme doubt hai"
 
 Question: {question}
 """
-            }],
-            max_tokens=150
-        )
+                }],
+                max_tokens=150
+            )
 
-        answer = response['choices'][0]['message']['content']
+            answer = response['choices'][0]['message']['content']
 
-    except Exception as e:
-        answer = "Sorry, mujhe abhi problem aa rahi hai. Dubara pucho."
+            # ✂️ limit answer length for Alexa
+            answer = answer[:300]
 
-    # 🗣️ Alexa response format
+        except Exception as e:
+            answer = "Sorry, mujhe abhi problem aa rahi hai. Thodi der baad try karo."
+
+        return jsonify({
+            "version": "1.0",
+            "response": {
+                "outputSpeech": {
+                    "type": "PlainText",
+                    "text": answer
+                },
+                "shouldEndSession": True
+            }
+        })
+
+    # 🔴 3. Fallback
     return jsonify({
         "version": "1.0",
         "response": {
             "outputSpeech": {
                 "type": "PlainText",
-                "text": answer
+                "text": "Sorry, mujhe samajh nahi aaya."
             },
             "shouldEndSession": True
         }
